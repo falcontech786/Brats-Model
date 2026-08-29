@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache & temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Large Datasets & Processed Files
+Data/
+BraTS2020_TrainingData/
+*.nii
+*.nii.gz
+*.npy
+temp_*
+
+# Model Checkpoint Weights (large binary files)
+*.keras
+*.hdf5
+*.h5
+
+# OS generated files
+.DS_Store
+Thumbs.db
