@@ -17,8 +17,7 @@ BraTS2020_TrainingData/
 *.npy
 temp_*
 
-# Model Checkpoint Weights (large binary files)
-*.keras
+# Model Checkpoint Weights (exclude extra checkpoints, allow main best model)
 *.hdf5
 *.h5
 
