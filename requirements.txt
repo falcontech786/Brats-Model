@@ -1,10 +1,8 @@
-tensorflow>=2.10.0
-segmentation-models-3D>=1.0.4
+tensorflow-cpu>=2.15.0
 nibabel>=5.0.0
 streamlit>=1.30.0
-scikit-learn
-matplotlib
-numpy
-pandas
-tifffile
-split-folders
+scikit-learn>=1.2.0
+matplotlib>=3.7.0
+numpy>=1.23.0
+pandas>=2.0.0
+Pillow>=9.5.0
