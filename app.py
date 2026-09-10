@@ -56,30 +56,52 @@ def load_trained_model(model_path='brats_3d_best.keras'):
     except Exception as e:
         return None, f"Error loading model: {str(e)}"
 
-# Load model
-model, load_err = load_trained_model()
-
 # Sidebar Setup
-st.sidebar.header("📁 Model & Input Settings")
+st.sidebar.header("🧠 Model Configuration")
 
-if load_err:
-    st.sidebar.error(load_err)
-    uploaded_model = st.sidebar.file_uploader("Upload 'brats_3d_best.keras' file", type=['keras', 'h5', 'hdf5'])
-    if uploaded_model:
-        temp_model_path = "brats_3d_best.keras"
-        with open(temp_model_path, "wb") as f:
-            f.write(uploaded_model.getbuffer())
-        model, load_err = load_trained_model(temp_model_path)
-        if model:
-            st.sidebar.success("Custom model loaded successfully!")
+model_choice = st.sidebar.selectbox(
+    "Select Model for Processing:",
+    ["Default Pretrained 3D U-Net (BraTS)", "Upload Custom Model (.keras / .h5)"]
+)
+
+model = None
+model_name = ""
+
+if model_choice == "Default Pretrained 3D U-Net (BraTS)":
+    model, load_err = load_trained_model('brats_3d_best.keras')
+    if load_err:
+        st.sidebar.error(load_err)
+    else:
+        model_name = "Default 3D U-Net (BraTS)"
+        st.sidebar.success(f"✅ Active: {model_name}")
+        st.sidebar.caption(f"📊 Parameters: {model.count_params():,} | Input: (128, 128, 128, 3)")
+else:
+    st.sidebar.info("Upload your custom trained 3D segmentation model (.keras or .h5 format):")
+    custom_model_file = st.sidebar.file_uploader("Upload Custom Model", type=['keras', 'h5', 'hdf5'])
+    
+    if custom_model_file:
+        custom_path = f"temp_custom_{custom_model_file.name}"
+        with open(custom_path, "wb") as f:
+            f.write(custom_model_file.getbuffer())
+        
+        try:
+            model = tf.keras.models.load_model(custom_path, compile=False)
+            model_name = f"Custom Model ({custom_model_file.name})"
+            st.sidebar.success(f"✅ Active: {model_name}")
+            st.sidebar.caption(f"📊 Parameters: {model.count_params():,} | Input: {model.input_shape}")
+        except Exception as e:
+            st.sidebar.error(f"Failed to load custom model: {str(e)}")
+            model = None
+    else:
+        st.sidebar.warning("Please upload a `.keras` or `.h5` model file to continue.")
 
 if model is None:
-    st.warning("⚠️ Please place or upload your trained `brats_3d_best.keras` model file to proceed.")
+    st.warning("⚠️ No model loaded. Please select the Default Model or upload a Custom Model in the sidebar to proceed.")
     st.stop()
-else:
-    st.sidebar.success("✅ 3D U-Net Model Loaded Successfully")
 
 # Input Mode
+st.sidebar.markdown("---")
+st.sidebar.header("📁 Input Data Settings")
 input_mode = st.sidebar.radio(
     "Choose Input Data Source:",
     ["Upload Preprocessed .npy Volume", "Upload Raw NIfTI (.nii / .nii.gz) Files", "Generate Synthetic Test Volume"]
