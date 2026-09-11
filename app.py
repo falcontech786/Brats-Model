@@ -39,31 +39,130 @@ st.markdown('<div class="sub-title">AI-Powered 3D MRI Segmentation using Deep Le
 # Set environment framework variable for segmentation-models-3D
 os.environ["SM_FRAMEWORK"] = "tf.keras"
 
+import zipfile
+import tempfile
+
+def build_default_unet():
+    """Constructs the standard BraTS 3D U-Net architecture (128x128x128x3 -> 4 classes)."""
+    inputs = tf.keras.layers.Input((128, 128, 128, 3))
+    kernel_initializer = 'he_uniform'
+    
+    # Encoder
+    c1 = tf.keras.layers.Conv3D(16, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(inputs)
+    c1 = tf.keras.layers.BatchNormalization()(c1)
+    c1 = tf.keras.layers.Dropout(0.1)(c1)
+    c1 = tf.keras.layers.Conv3D(16, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c1)
+    p1 = tf.keras.layers.MaxPooling3D((2, 2, 2))(c1)
+
+    c2 = tf.keras.layers.Conv3D(32, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(p1)
+    c2 = tf.keras.layers.BatchNormalization()(c2)
+    c2 = tf.keras.layers.Dropout(0.1)(c2)
+    c2 = tf.keras.layers.Conv3D(32, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c2)
+    p2 = tf.keras.layers.MaxPooling3D((2, 2, 2))(c2)
+
+    c3 = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(p2)
+    c3 = tf.keras.layers.BatchNormalization()(c3)
+    c3 = tf.keras.layers.Dropout(0.2)(c3)
+    c3 = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c3)
+    p3 = tf.keras.layers.MaxPooling3D((2, 2, 2))(c3)
+
+    c4 = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(p3)
+    c4 = tf.keras.layers.BatchNormalization()(c4)
+    c4 = tf.keras.layers.Dropout(0.2)(c4)
+    c4 = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c4)
+    p4 = tf.keras.layers.MaxPooling3D((2, 2, 2))(c4)
+
+    # Bottleneck
+    c5 = tf.keras.layers.Conv3D(256, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(p4)
+    c5 = tf.keras.layers.BatchNormalization()(c5)
+    c5 = tf.keras.layers.Dropout(0.3)(c5)
+    c5 = tf.keras.layers.Conv3D(256, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c5)
+
+    # Decoder
+    u6 = tf.keras.layers.Conv3DTranspose(128, (2, 2, 2), strides=(2, 2, 2), padding='same')(c5)
+    u6 = tf.keras.layers.concatenate([u6, c4])
+    c6 = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(u6)
+    c6 = tf.keras.layers.Dropout(0.2)(c6)
+    c6 = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c6)
+
+    u7 = tf.keras.layers.Conv3DTranspose(64, (2, 2, 2), strides=(2, 2, 2), padding='same')(c6)
+    u7 = tf.keras.layers.concatenate([u7, c3])
+    c7 = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(u7)
+    c7 = tf.keras.layers.Dropout(0.2)(c7)
+    c7 = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c7)
+
+    u8 = tf.keras.layers.Conv3DTranspose(32, (2, 2, 2), strides=(2, 2, 2), padding='same')(c7)
+    u8 = tf.keras.layers.concatenate([u8, c2])
+    c8 = tf.keras.layers.Conv3D(32, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(u8)
+    c8 = tf.keras.layers.Dropout(0.1)(c8)
+    c8 = tf.keras.layers.Conv3D(32, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c8)
+
+    u9 = tf.keras.layers.Conv3DTranspose(16, (2, 2, 2), strides=(2, 2, 2), padding='same')(c8)
+    u9 = tf.keras.layers.concatenate([u9, c1])
+    c9 = tf.keras.layers.Conv3D(16, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(u9)
+    c9 = tf.keras.layers.Dropout(0.1)(c9)
+    c9 = tf.keras.layers.Conv3D(16, (3, 3, 3), activation='relu', kernel_initializer=kernel_initializer, padding='same')(c9)
+
+    outputs = tf.keras.layers.Conv3D(4, (1, 1, 1), activation='softmax', dtype='float32')(c9)
+    return tf.keras.models.Model(inputs=[inputs], outputs=[outputs])
+
 @st.cache_resource
 def load_trained_model(model_path='brats_3d_best.keras'):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidate_paths = [
-        model_path,
-        os.path.join(base_dir, model_path),
-        os.path.join(base_dir, 'brats_3d_best.keras'),
-        os.path.join(base_dir, 'brats_3d.hdf5'),
-        os.path.join(os.getcwd(), model_path),
-        os.path.join(os.getcwd(), 'brats_3d_best.keras')
+        os.path.abspath(os.path.join(base_dir, 'brats_3d_best.keras')),
+        os.path.abspath(os.path.join(base_dir, 'brats_3d.hdf5')),
+        os.path.abspath(os.path.join(os.getcwd(), 'brats_3d_best.keras')),
+        os.path.abspath(os.path.join(os.getcwd(), 'brats_3d.hdf5')),
     ]
+    if model_path:
+        candidate_paths.insert(0, os.path.abspath(os.path.join(base_dir, model_path)))
+        candidate_paths.insert(1, os.path.abspath(model_path))
+    
     resolved_path = None
     for p in candidate_paths:
-        if os.path.exists(p) and os.path.isfile(p):
+        if p and os.path.exists(p) and os.path.isfile(p):
             resolved_path = p
             break
     
     if not resolved_path:
-        return None, f"Model file 'brats_3d_best.keras' not found. Directory: {base_dir}"
+        return None, f"Model file 'brats_3d_best.keras' not found. Checked paths in base directory: {base_dir}"
     
+    # Method 1: Standard tf.keras load_model with absolute path
     try:
         model = tf.keras.models.load_model(resolved_path, compile=False)
         return model, None
-    except Exception as e:
-        return None, f"Error loading model: {str(e)}"
+    except Exception:
+        pass
+
+    # Method 2: Standalone keras.models.load_model if available
+    try:
+        import keras
+        model = keras.models.load_model(resolved_path, compile=False)
+        return model, None
+    except Exception:
+        pass
+
+    # Method 3: Fallback - Rebuild 3D U-Net architecture & load weights
+    try:
+        model = build_default_unet()
+        if zipfile.is_zipfile(resolved_path):
+            with zipfile.ZipFile(resolved_path, 'r') as zf:
+                if 'model.weights.h5' in zf.namelist():
+                    with tempfile.NamedTemporaryFile(suffix='.weights.h5', delete=False) as tmp_w:
+                        tmp_w.write(zf.read('model.weights.h5'))
+                        tmp_w_path = tmp_w.name
+                    try:
+                        model.load_weights(tmp_w_path)
+                    finally:
+                        if os.path.exists(tmp_w_path):
+                            os.remove(tmp_w_path)
+                    return model, None
+        model.load_weights(resolved_path)
+        return model, None
+    except Exception as e_final:
+        return None, f"Error loading model from '{resolved_path}': {str(e_final)}"
+
 
 # Sidebar Setup
 st.sidebar.header("🧠 Model Configuration")
@@ -89,18 +188,19 @@ else:
     custom_model_file = st.sidebar.file_uploader("Upload Custom Model", type=['keras', 'h5', 'hdf5'])
     
     if custom_model_file:
-        custom_path = f"temp_custom_{custom_model_file.name}"
+        custom_path = os.path.abspath(f"temp_custom_{custom_model_file.name}")
         with open(custom_path, "wb") as f:
             f.write(custom_model_file.getbuffer())
         
-        try:
-            model = tf.keras.models.load_model(custom_path, compile=False)
+        custom_model, c_err = load_trained_model(custom_path)
+        if c_err:
+            st.sidebar.error(f"Failed to load custom model: {c_err}")
+            model = None
+        else:
+            model = custom_model
             model_name = f"Custom Model ({custom_model_file.name})"
             st.sidebar.success(f"✅ Active: {model_name}")
             st.sidebar.caption(f"📊 Parameters: {model.count_params():,} | Input: {model.input_shape}")
-        except Exception as e:
-            st.sidebar.error(f"Failed to load custom model: {str(e)}")
-            model = None
     else:
         st.sidebar.warning("Please upload a `.keras` or `.h5` model file to continue.")
 
