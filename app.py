@@ -41,17 +41,26 @@ os.environ["SM_FRAMEWORK"] = "tf.keras"
 
 @st.cache_resource
 def load_trained_model(model_path='brats_3d_best.keras'):
-    if not os.path.exists(model_path):
-        for p in ['brats_3d_best.keras', 'brats_3d.hdf5', '../brats_3d_best.keras']:
-            if os.path.exists(p):
-                model_path = p
-                break
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_paths = [
+        model_path,
+        os.path.join(base_dir, model_path),
+        os.path.join(base_dir, 'brats_3d_best.keras'),
+        os.path.join(base_dir, 'brats_3d.hdf5'),
+        os.path.join(os.getcwd(), model_path),
+        os.path.join(os.getcwd(), 'brats_3d_best.keras')
+    ]
+    resolved_path = None
+    for p in candidate_paths:
+        if os.path.exists(p) and os.path.isfile(p):
+            resolved_path = p
+            break
     
-    if not os.path.exists(model_path):
-        return None, f"Model file '{model_path}' not found in current directory."
+    if not resolved_path:
+        return None, f"Model file 'brats_3d_best.keras' not found. Directory: {base_dir}"
     
     try:
-        model = tf.keras.models.load_model(model_path, compile=False)
+        model = tf.keras.models.load_model(resolved_path, compile=False)
         return model, None
     except Exception as e:
         return None, f"Error loading model: {str(e)}"
